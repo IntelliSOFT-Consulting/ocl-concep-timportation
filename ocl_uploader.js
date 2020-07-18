@@ -5,92 +5,145 @@ function onOpen() {
     .addToUi();
 }
 
-var DATA_ELEMENT = 0;
-var CEIL_ENGLISH_NAME = 1;
-var CEIL_CONCEPT_CLASS = 2;
-var CEIL_CONCEPT_ID = 3;
+var CONCEPT_ID = "concept_id";
+var CONCEPT_CLASS = "concept_class";
+var DATATYPE = "datatype";
+var CONCEPT_NAME = "concept_name";
+var DOSAGE_FORM = "dosage_form";
+var DOSAGE_STRENGTH = "dosage_strength";
+var CIEL_ID = "ciel_id";
+var ICD10_ID = "icd10_id";
+var SNOMED_CT_ID = "snomed_id";
 
-var DATATYPE = 5;
-var CAREPAY_MAP = 6;
-var DOSAGE_FORM = 7;
-var DOSAGE_STRENGTH = 8;
-var DATA_ELEMENT_DESCRIPTION = 9;
-var REPRESENTATION = 10;
-var TRANSLATION_SPECIFIC_LOCALE = 11;
-var CAREPAY_NAME = 12;
-var ICD_MAP = 13;
-var ICD_10_MAP = 14;
-var ICD_10_NAME = 15;
-var CPT_MAP = 16;
-var SNOMED_MAP = 17;
-var SNOMED_NAME = 18;
-
-
-var STATUS = 21;
-var LOINC_CODE = 22;
+var columnToProperty = {
+  "CAREPAY Map": CONCEPT_ID,
+  "CIEL Concept Class": CONCEPT_CLASS,
+  "DataType": DATATYPE,
+  "CAREPAY Name": CONCEPT_NAME,
+  "Dosage Form": DOSAGE_FORM,
+  "Dosage Strength": DOSAGE_STRENGTH,
+  "CIEL Concept ID": CIEL_ID,
+  "ICD-10 Map": ICD10_ID,
+  "SNOMED Map": SNOMED_CT_ID
+};
 
 var OCL_API_ENDPOINT = "https://api.openconceptlab.org/";
-var ORIGIN_SOURCE_URL = "https://www.openconceptlab.org/users/moshonk/collections/carepay-ciel/concepts/";
-var CEIL_SOURCE_URL = "https://www.openconceptlab.org/orgs/CIEL/sources/CIEL/concepts/";
-var ICD_10_SOURCE_URL = "/orgs/WHO/sources/ICD-10-WHO/";
-var SNOMED_CT_SOURCE_URL = "/orgs/IHTSDO/sources/SNOMED-CT/";
+var ORIGIN_SOURCE_URL = "/users/moshonk/collections/carepay-ciel/concepts/";
+var CEIL_SOURCE_URL = "/orgs/CIEL/sources/CIEL/concepts/";
+var ICD10_SOURCE_URL = "/orgs/WHO/sources/ICD-10-WHO/concepts/";
+var SNOMED_CT_SOURCE_URL = "/orgs/IHTSDO/sources/SNOMED-CT/concepts/";
 
 /**
  * Parses current sheet and performs a bulk export of concepts and mappings to ocl.
  * Assumptions:
- * - The user will only click the 'Upload to OCL' button while viewing an uploadable sheet
+ * - The user will click the 'Upload to OCL' button while viewing an uploadable sheet
  * - Only one name will be provided for concepts
  * - All mappings are of type 'Same As'
  * - All mappings are internal mappings
  */
 function uploadToOCL() {
-  var sheet = SpreadsheetApp.getActiveSheet();
-  var height = sheet.getHeight();
+  var range = SpreadsheetApp.getActiveSheet().getDataRange();
+  var height = range.getHeight();
+  var width = range.getWidth();
+  var ui = SpreadsheetApp.getUi();
+
+  var findProperty = function (header) {
+    for (var column in columnToProperty) {
+      if (columnToProperty.hasOwnProperty(column) && header.startsWith(column)) {
+        return columnToProperty[column];
+      }
+    }
+  }
+
+  //create a map between resource properties and sheet rows
+  var propertyToPosition = {};
+  for (var col = 1; col <= width; col++) {
+    var property = findProperty(range.getCell(1, col).getValue());
+    if (property) {
+      propertyToPosition[property] = col;
+    }
+  }
+
+  if (Object.keys(propertyToPosition).length === 0 && propertyToPosition.constructor === Object) {
+    //no column were mapped implying that the wrong sheet is active
+    ui.alert("Please check that you are uploading the correct sheet!");
+    return;
+  }
+
+  var skipRow = function(rowId) {
+    var skip = false;
+    // concept id should be provided
+    if (!range.getCell(row, propertyToPosition[CONCEPT_ID]).getValue()) {
+      skip = true;
+    }
+    // concept class should be provided
+    if (!range.getCell(row, propertyToPosition[CONCEPT_CLASS]).getValue()) {
+      skip = true;
+    }
+    // datatype should be provided
+    if (!range.getCell(row, propertyToPosition[DATATYPE]).getValue()) {
+      skip = true;
+    }
+    // concept name should be provided
+    if (!range.getCell(row, propertyToPosition[CONCEPT_NAME]).getValue()) {
+      skip = true;
+    }
+    return skip;
+  }
 
   //create request body
   var requestBody = '';
-  for (var row = 1; row < height; row++) {
+  for (var row = 2; row <= height; row++) {
+    if (skipRow(row)) {
+      continue; // row is incomplete, skip
+    }
     // concepts resource
     requestBody += '{ ';
     requestBody += 'type: "Concept", '
-    requestBody += 'id: "' + sheet[row][CAREPAY_MAP] + '", '; // check if provided fail otherwise
-    requestBody += 'concept_class: "' + sheet[row][CEIL_CONCEPT_CLASS] + '", '; // check if provided fail otherwise
-    requestBody += 'datatype: "' + sheet[row][DATATYPE] + '", ';
+    requestBody += 'id: "' + range.getCell(row, propertyToPosition[CONCEPT_ID]).getValue() + '", ';
+    requestBody += 'concept_class: "' + range.getCell(row, propertyToPosition[CONCEPT_CLASS]).getValue() + '", ';
+    requestBody += 'datatype: "' + range.getCell(row, propertyToPosition[DATATYPE]).getValue() + '", ';
     requestBody += 'names: [{';
-    requestBody += 'name: "' + sheet[row][CAREPAY_NAME] + '", ';
-    requestBody += 'locale: "en"';
+    requestBody += 'name: "' + range.getCell(row, propertyToPosition[CONCEPT_NAME]).getValue() + '", ';
+    requestBody += 'locale: "en" ';
     requestBody += '}]';
+    if (range.getCell(row, propertyToPosition[DOSAGE_FORM]).getValue()) { // assume that if dosage form is given then dosage strength is also given
+      requestBody += ', extras: { ';
+      requestBody += 'dosage_form: "' + range.getCell(row, propertyToPosition[DOSAGE_FORM]).getValue() + '", ';
+      requestBody += 'dosage_strength: "' + range.getCell(row, propertyToPosition[DOSAGE_STRENGTH]).getValue() + '" ';
+      requestBody += '}';
+    }
     requestBody += '}\n';
 
     // mappings resource
-    if (sheet[row][CEIL_CONCEPT_ID]) {
+    if (range.getCell(row, propertyToPosition[CIEL_ID]).getValue()) {
       // CEIL
-      requestBody += ', { ';
+      requestBody += '{ ';
       requestBody += 'type: "Mapping", ';
       requestBody += 'map_type: "Same As", ';
-      requestBody += 'from_concept_url: "' + ORIGIN_SOURCE_URL + sheet[row][CAREPAY_MAP] + '/", ';
-      requestBody += 'to_concept_url: "' + CEIL_SOURCE_URL + sheet[row][CEIL_CONCEPT_ID] + '/", ';
+      requestBody += 'from_concept_url: "' + ORIGIN_SOURCE_URL + range.getCell(row, propertyToPosition[CONCEPT_ID]).getValue() + '/", ';
+      requestBody += 'to_concept_url: "' + CEIL_SOURCE_URL + range.getCell(row, propertyToPosition[CIEL_ID]).getValue() + '/"';
       requestBody += '}\n';
     }
 
-    if (sheet[row][ICD_10_MAP]) {
+    if (range.getCell(row, propertyToPosition[ICD10_ID]).getValue()) {
       //ICD 10
-      requestBody += ', { ';
+      requestBody += '{ ';
       requestBody += 'type: "Mapping", ';
       requestBody += 'map_type: "Same As", ';
-      requestBody += 'from_concept_url: "' + ORIGIN_SOURCE_URL + sheet[row][CAREPAY_MAP] + '/", ';
-      requestBody += 'to_concept_url: "' + ICD_10_SOURCE_URL + sheet[row][ICD_10_MAP] + '/", ';
+      requestBody += 'from_concept_url: "' + ORIGIN_SOURCE_URL + range.getCell(row, propertyToPosition[CONCEPT_ID]).getValue() + '/", ';
+      requestBody += 'to_concept_url: "' + ICD10_SOURCE_URL + range.getCell(row,propertyToPosition[ICD10_ID]).getValue() + '/"';
       requestBody += '}\n';
 
     }
 
-    if (sheet[row][SNOMED_MAP]) {
+    if (range.getCell(row, propertyToPosition[SNOMED_CT_ID]).getValue()) {
       //SNOMED
-      requestBody += ', { ';
+      requestBody += '{ ';
       requestBody += 'type: "Mapping", ';
       requestBody += 'map_type: "Same As", ';
-      requestBody += 'from_concept_url: "' + ORIGIN_SOURCE_URL + sheet[row][CAREPAY_MAP] + '/", ';
-      requestBody += 'to_concept_url: "' + SNOMED_CT_SOURCE_URL + sheet[row][SNOMED_MAP] + '/", ';
+      requestBody += 'from_concept_url: "' + ORIGIN_SOURCE_URL + range.getCell(row, propertyToPosition[CONCEPT_ID]).getValue() + '/", ';
+      requestBody += 'to_concept_url: "' + SNOMED_CT_SOURCE_URL + range.getCell(row, propertyToPosition[SNOMED_CT_ID]).getValue() + '/"';
       requestBody += '}\n';
 
     }
@@ -105,5 +158,6 @@ function uploadToOCL() {
   };
   var response = UrlFetchApp.fetch(OCL_API_ENDPOINT + '/manage/bulkimport/', options);
 
-  SpreadsheetApp.getUi().alert(response.getContentText("UTF-8"));
+  ui.alert(response.getContentText("UTF-8"));
+
 }
