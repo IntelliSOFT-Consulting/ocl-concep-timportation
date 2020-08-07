@@ -6,6 +6,8 @@ To install this App Script:
 1. Open the document with the proper OCL template
 2. Click on 'Tool' menu and choose 'Script Editor'
 3. Copy and paste the content of 'ocl_uploader.js' into the opened editor
+4. Create a HTML file with the name 'Page' and paste the content of the corresponding file to it.
+5. Create a HTML file with the name 'Javascript' and paste the content of the corresponding file to it
 4. Save the project as 'OCL uploader'
 5. Refresh the sheet. A new menu 'OCL' should be visible
 

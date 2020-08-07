@@ -1,7 +1,7 @@
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('OCL')
-    .addItem('Upload to OCL', 'parseAndSendToOcl')
+    .addItem('Upload to OCL', 'sendConcepts')
     .addToUi();
 }
 
@@ -38,20 +38,13 @@ var ICD10_SOURCE_URL = "/orgs/WHO/sources/ICD-10-WHO/concepts/";
 var SNOMED_SOURCE_URL = "/orgs/CIEL/sources/SNOMED-MVP/";
 
 /**
- * Parses current sheet and performs a bulk export of concepts and mappings to ocl.
- * Assumptions:
- * - The user will only click the 'Upload to OCL' button while viewing an uploadable sheet
- * - Only one name will be provided for concepts
- * - All names are of type 'Fully Specified' so as to pass OpenMRS concept validation
- * - All mappings are of type 'Same As'
- * - All mappings are internal mappings
+ * Sets up properties required for sending concepts.
  */
-function parseAndSendToOcl() {
+function setup() {
   var range = SpreadsheetApp.getActiveSheet().getDataRange();
-  var height = range.getHeight();
   var width = range.getWidth();
-  var ui = SpreadsheetApp.getUi();
 
+  //create map between concept properties and sheet rows 
   var findProperty = function (header) {
     for (var column in columnToProperty) {
       if (columnToProperty.hasOwnProperty(column) && header.startsWith(column)) {
@@ -60,7 +53,7 @@ function parseAndSendToOcl() {
     }
   }
 
-  //create a map between resource properties and sheet rows
+  //a map between concept properties and sheet rows
   var propertyToPosition = {};
   for (var col = 1; col <= width; col++) {
     var property = findProperty(range.getCell(1, col).getValue());
@@ -68,29 +61,69 @@ function parseAndSendToOcl() {
       propertyToPosition[property] = col;
     }
   }
-
-  if (Object.keys(propertyToPosition).length === 0 && propertyToPosition.constructor === Object) {
-    //no column were mapped implying that the wrong sheet is active
-    ui.alert("Please check that you are uploading the correct sheet!");
-    return;
+  return {
+    totalConcepts: range.getHeight() - 1,
+    propertyToPosition: propertyToPosition
   }
+}
 
-  var skipRow = function(rowId) {
+/**
+ * Initiates the send process
+ */
+function sendConcepts() {
+  var html = HtmlService
+    .createTemplateFromFile('Progress')
+    .evaluate()
+    .setHeight(100)
+    .setWidth(300);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Sending');
+}
+
+function displayError() {
+  SpreadsheetApp.getUi().alert("Please check that you are uploading the correct sheet!");
+}
+
+//helper to load Javascript file
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename)
+      .getContent();
+}
+
+/**
+ * Parses documents and sends concepts in batches.
+ * Assumptions:
+ * - The user will only click the 'Upload to OCL' button while viewing an uploadable sheet
+ * - Only one name will be provided for concepts
+ * - All names are of type 'Fully Specified' so as to pass OpenMRS concept validation
+ * - All mappings are of type 'Same As'
+ * - All mappings are internal mappings
+ */
+function sendBatch(start, end, propertyToPosition) {
+  Logger.log(propertyToPosition);
+  Logger.log("Start: %s, End: %s", start, end);
+
+  var range = SpreadsheetApp.getActiveSheet().getDataRange();
+
+  var skipRow = function (rowId) {
     var skip = false;
+    // skip the header row
+    if (rowId === 1) {
+      skip = true;
+    }
     // concept id should be provided
-    if (!range.getCell(row, propertyToPosition[CONCEPT_ID]).getValue()) {
+    if (!range.getCell(rowId, propertyToPosition[CONCEPT_ID]).getValue()) {
       skip = true;
     }
     // concept class should be provided
-    if (!range.getCell(row, propertyToPosition[CONCEPT_CLASS]).getValue()) {
+    if (!range.getCell(rowId, propertyToPosition[CONCEPT_CLASS]).getValue()) {
       skip = true;
     }
     // datatype should be provided
-    if (!range.getCell(row, propertyToPosition[DATATYPE]).getValue()) {
+    if (!range.getCell(rowId, propertyToPosition[DATATYPE]).getValue()) {
       skip = true;
     }
     // concept name should be provided
-    if (!range.getCell(row, propertyToPosition[CONCEPT_NAME]).getValue()) {
+    if (!range.getCell(rowId, propertyToPosition[CONCEPT_NAME]).getValue()) {
       skip = true;
     }
     return skip;
@@ -98,7 +131,7 @@ function parseAndSendToOcl() {
 
   //create request body
   var requestBody = '';
-  for (var row = 2; row <= height; row++) {
+  for (var row = start + 1; row <= end; row++) {
     if (skipRow(row)) {
       continue; // data in row is incomplete, skip
     }
@@ -119,9 +152,9 @@ function parseAndSendToOcl() {
       requestBody += '"dosage_strength": "' + range.getCell(row, propertyToPosition[DOSAGE_STRENGTH]).getValue() + '" ';
       requestBody += '}, ';
     }
-    requestBody += '"owner": "' + owner +'", ';
-    requestBody += '"owner_type": "' + ownerType +'", ';
-    requestBody += '"source": "' + source +'" ';
+    requestBody += '"owner": "' + owner + '", ';
+    requestBody += '"owner_type": "' + ownerType + '", ';
+    requestBody += '"source": "' + source + '" ';
     requestBody += '}\n';
 
     // mappings resource
@@ -132,9 +165,9 @@ function parseAndSendToOcl() {
       requestBody += '"map_type": "Same As", ';
       requestBody += '"from_concept_url": "' + ORIGIN_SOURCE_URL + range.getCell(row, propertyToPosition[CONCEPT_ID]).getValue() + '/", ';
       requestBody += '"to_concept_url": "' + CEIL_SOURCE_URL + range.getCell(row, propertyToPosition[CIEL_ID]).getValue() + '/", ';
-      requestBody += '"owner": "' + owner +'", ';
-      requestBody += '"owner_type": "' + ownerType +'", ';
-      requestBody += '"source": "' + source +'"';
+      requestBody += '"owner": "' + owner + '", ';
+      requestBody += '"owner_type": "' + ownerType + '", ';
+      requestBody += '"source": "' + source + '"';
       requestBody += '}\n';
     }
 
@@ -144,10 +177,10 @@ function parseAndSendToOcl() {
       requestBody += '"type": "Mapping", ';
       requestBody += '"map_type": "Same As", ';
       requestBody += '"from_concept_url": "' + ORIGIN_SOURCE_URL + range.getCell(row, propertyToPosition[CONCEPT_ID]).getValue() + '/", ';
-      requestBody += '"to_concept_url": "' + ICD10_SOURCE_URL + range.getCell(row,propertyToPosition[ICD10_ID]).getValue() + '/", ';
-      requestBody += '"owner": "' + owner +'", ';
-      requestBody += '"owner_type": "' + ownerType +'", ';
-      requestBody += '"source": "' + source +'" ';
+      requestBody += '"to_concept_url": "' + ICD10_SOURCE_URL + range.getCell(row, propertyToPosition[ICD10_ID]).getValue() + '/", ';
+      requestBody += '"owner": "' + owner + '", ';
+      requestBody += '"owner_type": "' + ownerType + '", ';
+      requestBody += '"source": "' + source + '" ';
       requestBody += '}\n';
     }
 
@@ -158,27 +191,28 @@ function parseAndSendToOcl() {
       requestBody += '"map_type": "Same As", ';
       requestBody += '"from_concept_url": "' + ORIGIN_SOURCE_URL + range.getCell(row, propertyToPosition[CONCEPT_ID]).getValue() + '/", ';
       requestBody += '"to_concept_url": "' + SNOMED_SOURCE_URL + range.getCell(row, propertyToPosition[SNOMED_ID]).getValue() + '/", ';
-      requestBody += '"owner": "' + owner +'", ';
-      requestBody += '"owner_type": "' + ownerType +'", ';
-      requestBody += '"source": "' + source +'" ';
+      requestBody += '"owner": "' + owner + '", ';
+      requestBody += '"owner_type": "' + ownerType + '", ';
+      requestBody += '"source": "' + source + '" ';
       requestBody += '}\n';
     }
   }
 
-  Logger.log('Request body: \n %s', requestBody);
+  //Logger.log('Request body: \n %s', requestBody);
 
   var options = {
-    'method' : 'post',
-    'contentType': 'application/jsonl',
-    'headers': { 'Authorization': 'Token ' },
-    'payload' : requestBody
+    'method': 'post',
+    'contentType': 'application/json+jsonl',
+    'headers': { 'Authorization': 'Token 48837c7228cf8e3f619360ca523c696bf50f1e96' },
+    'payload': requestBody
   };
   var response = UrlFetchApp.fetch(OCL_API_ENDPOINT + '/manage/bulkimport/', options);
+  Logger.log(response.getContentText("UTF-8"));
 
   if (JSON.parse(response.getContentText("UTF-8")).state === "PENDING") {
-    ui.alert("Data has been sent to OCL for processing.");
+    return { success: true };
   } else {
-    ui.alert("An error occured, please retry uploading.");
+    return { success: false };
   }
 
 }

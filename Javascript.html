@@ -1,0 +1,59 @@
+<script>
+    window.addEventListener('load', function () {
+        var BATCH_SIZE = 50;
+
+        var circularProgress = new mdc.circularProgress.MDCCircularProgress(document.querySelector('.mdc-circular-progress'));
+        circularProgress.determinate = false
+
+        //initiate sending of concepts in batches
+        var initialize = function (context) {
+            var totalConcepts = context.totalConcepts;
+            var propertyToPosition = context.propertyToPosition;
+            //validate context and close modal if invalid
+            if (Object.keys(propertyToPosition).length === 0 && propertyToPosition.constructor === Object) {
+                google.script.run.displayError();
+                google.script.host.close();
+                return;
+            }
+            
+            var batches = Math.ceil(totalConcepts / BATCH_SIZE)
+            var batch = 0;
+            var start = (batch * BATCH_SIZE);
+            var end = Math.min((batch * BATCH_SIZE) + BATCH_SIZE, totalConcepts);
+            (function (batch, start, end) {
+                //send concepts in batches
+                var send = function (response) {
+                    if (!circularProgress.determinate) {
+                        circularProgress.determinate = true;
+                    }
+                    if (response && !response.success) {
+                        //display error message and stop processing.
+                        document.querySelector(".message").innerHTML = "Could not send concepts to OCL.";
+                        return;
+                    }
+                    if (end === totalConcepts) {
+                        circularProgress.progress = 1;
+                        document.querySelector(".message").innerHTML = "Done.";
+                        return;
+                    }
+                    batch++;
+                    //update ui progress bar
+                    circularProgress.progress = batch / batches;
+
+                    //update ui message
+                    document.querySelector(".message").innerHTML = `Sending batch ${batch + 1} of ${batches}.`;
+
+                    start = (batch * BATCH_SIZE)
+                    end = Math.min((batch * BATCH_SIZE) + BATCH_SIZE, totalConcepts);
+                    google.script.run.withSuccessHandler(send).sendBatch(start, end, propertyToPosition);
+                }
+                //send first batch
+                document.querySelector(".message").innerHTML = `Sending batch ${batch + 1} of ${batches}.`;
+                google.script.run.withSuccessHandler(send).sendBatch(start, end, propertyToPosition);
+            })(batch, start, end);
+        }
+
+        //obtain the send context
+        google.script.run.withSuccessHandler(initialize).setup();
+    });
+</script>
