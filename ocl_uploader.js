@@ -199,6 +199,10 @@ function sendBatch(start, end, propertyToPosition) {
   }
 
   //Logger.log('Request body: \n %s', requestBody);
+  // Prevents empty requestBody from being sent to the OCL end-point
+  if (requestBody === '') {
+    return { success: true };
+  }
 
   var options = {
     'method': 'post',
