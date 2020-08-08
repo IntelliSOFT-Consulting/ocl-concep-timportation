@@ -209,7 +209,7 @@ function sendBatch(start, end, propertyToPosition) {
   var response = UrlFetchApp.fetch(OCL_API_ENDPOINT + '/manage/bulkimport/', options);
   Logger.log(response.getContentText("UTF-8"));
 
-  if (JSON.parse(response.getContentText("UTF-8")).state === "PENDING") {
+  if (JSON.parse(response.getContentText("UTF-8")).task) {
     return { success: true };
   } else {
     return { success: false };
