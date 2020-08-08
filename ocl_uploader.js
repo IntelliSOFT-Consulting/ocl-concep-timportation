@@ -208,12 +208,13 @@ function sendBatch(start, end, propertyToPosition) {
     'method': 'post',
     'contentType': 'application/json+jsonl',
     'headers': { 'Authorization': 'Token 48837c7228cf8e3f619360ca523c696bf50f1e96' },
-    'payload': requestBody
+    'payload': requestBody,
+    'muteHttpExceptions': true
   };
   var response = UrlFetchApp.fetch(OCL_API_ENDPOINT + '/manage/bulkimport/', options);
   Logger.log(response.getContentText("UTF-8"));
 
-  if (JSON.parse(response.getContentText("UTF-8")).task) {
+  if (response.getResponseCode() >= 200 && response.getResponseCode() < 300) {
     return { success: true };
   } else {
     return { success: false };
